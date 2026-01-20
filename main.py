@@ -168,8 +168,8 @@ plot_parameters = [
 for title, ylabel, filename, ax, fig in plot_parameters:
     ax.set_title(title)
     ax.set_ylabel(ylabel)
-    ax.legend()
     ax.grid()
+    ax.legend(ncol=3, fontsize="small")
     fig.figure.savefig(filename)
 
 print("Figures saved...")
