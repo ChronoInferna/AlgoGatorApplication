@@ -11,7 +11,6 @@ from scipy.stats import skew
 tickers = [
     "SPY",
     "QQQ",
-    "IWM",
     "EFA",
     "EEM",
     "VGK",
@@ -19,22 +18,13 @@ tickers = [
     "TLT",
     "IEF",
     "SHY",
-    "LQD",
-    "HYG",
     "BND",
-    "DBC",
-    "USO",
-    "GLD",
-    "SLV",
-    "DBA",
-    "UNG",
     "COPX",
     "UUP",
     "FXE",
     "FXY",
     "VWO",
 ]
-
 start_date = datetime(year=2015, month=3, day=1)
 end_date = datetime(year=2025, month=3, day=1)
 data = (
@@ -74,28 +64,47 @@ fig_asset_long, ax_asset_long = plt.subplots()
 # Step 4: Loop over lookback periods (i.e. backtest)
 for lb in lookbacks:
     # Signals
-    signals = pd.DataFrame(index=returns.index, columns=returns.columns)
+    signals = returns.copy()
     for asset in returns.columns:
         # Actual backtesting loop
-        for t in range(lb, len(data) - 1):
-            y = np.log(data[asset].iloc[t - lb : t])
-            x = np.arange(lb)
-            X = add_constant(x)
-            res = OLS(y, X).fit()
+        for t in range(lb, len(returns)):
+            y = np.log(data[asset].iloc[t - lb + 1 : t + 1])
+            x = add_constant(np.arange(lb))
+            res = OLS(y, x).fit()
             signals.at[returns.index[t], asset] = res.params.iloc[1]
 
     signals = signals.astype(float)
 
+    # Normalize signals
+    slope_std = signals.rolling(window=lb, min_periods=lb).std()
+    slope_std = slope_std.replace(0, np.nan)
+    signals_norm = signals / slope_std
+    signals_norm = signals_norm.fillna(0)
+
     # Volatility scaling
-    weights = signals / vol
+    target_vol = 0.15
+    weights = (signals_norm / vol) * target_vol
     weights = weights.div(weights.abs().sum(axis=1), axis=0)
 
+    # Monthly rebalancing - does this work?
+    monthly_rebalance_dates = (
+        weights.index.to_period("M")  # Works even though there's an error
+        .drop_duplicates()
+        .to_timestamp()
+    )
+    weights_monthly = weights.copy()
+    current_weights = pd.Series(0, index=weights.columns)
+    for date in weights.index:
+        if date in monthly_rebalance_dates:
+            current_weights = weights.loc[date]
+        weights_monthly.loc[date] = current_weights
+
     # Turnover and transaction costs
-    turnover = weights.diff().abs().sum(axis=1)
+    turnover = weights_monthly.diff().abs().sum(axis=1)
     cost = turnover * cost_per_unit
 
     # Portfolio PnL
-    pnl = (weights.shift(1) * returns).sum(axis=1) - cost
+    pnl = (weights_monthly.shift(1).loc[returns.index] * returns).sum(axis=1) - cost
     cum_pnl = (1 + pnl).cumprod()
 
     # Metrics
@@ -127,6 +136,8 @@ for lb in lookbacks:
     for asset in returns.columns:
         if lb in asset_axes:
             asset_axes[lb].plot(contrib[asset].cumsum(), label=str(asset[0]))
+
+    print(f"Lookback finished: {lb} days")
 
 # Step 5: Results table
 results_df = pd.DataFrame(results)
