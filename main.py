@@ -92,7 +92,7 @@ for lb in lookbacks:
     realized_vol = portfolio_returns.rolling(window=lb).std() * np.sqrt(252)
 
     # Monthly rebalancing with threshold
-    periods = weights.index.to_period("M")  # Works even if it says there's an error
+    periods = weights.index.to_period("M")
     weights_monthly = weights.copy()
     threshold = 0.05
     current_weights = pd.Series(0.0, index=weights.columns)
